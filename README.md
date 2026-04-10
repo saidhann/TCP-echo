@@ -1,99 +1,220 @@
-# TCP Server and Client
+# 🔌 TCP Chat Server
 
-This project contains a simple TCP server and client implementation in C. The server can handle multiple client connections concurrently using threads. The client communicates with the server, sending messages and receiving responses.
+A multithreaded **TCP server and client** written in **C** for Linux. The server accepts multiple simultaneous client connections, handling each in a dedicated thread. Clients can exchange messages with the server interactively, with the server echoing messages back or responding to specific commands.
 
-## Files
+---
 
-- **`server.c`**: TCP server code that handles multiple clients.
-- **`client.c`**: TCP client code to interact with the server.
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [How It Works](#how-it-works)
+  - [Server](#server)
+  - [Client](#client)
+- [Prerequisites](#prerequisites)
+- [Building](#building)
+- [Running](#running)
+  - [Start the Server](#start-the-server)
+  - [Start a Client](#start-a-client)
+  - [Testing Multiple Clients](#testing-multiple-clients)
+- [Protocol](#protocol)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+---
+
+## Overview
+
+This project demonstrates low-level **POSIX socket programming** in C. The server listens on port `8080`, spawning a new thread per accepted connection so multiple clients can communicate concurrently without blocking each other. The client reads user input from stdin and exchanges messages with the server in a simple request-response loop.
+
+---
 
 ## Features
 
-- The server responds with "world" when a client sends the message "hello".
-- The server echoes any other message back to the client.
-- Both server and client handle disconnections gracefully.
-- The client ignores and does not send empty messages.
+- 🧵 **Multithreaded server** — each client connection runs in its own POSIX thread (`pthread`)
+- 💬 **Interactive client** — reads from stdin, sends to server, prints the response
+- 🔁 **Echo behaviour** — server echoes any message back to the sender
+- 🤝 **Custom protocol** — server replies `"world"` when client sends `"hello"`
+- 🚫 **Empty message filtering** — client silently ignores empty input without sending
+- 🛑 **Graceful shutdown** — server catches `SIGINT` (`Ctrl+C`) and closes the socket cleanly
+- 🔌 **Disconnect command** — client exits cleanly on `disconnect`
+- ♻️ **`SO_REUSEADDR`** — server socket can be restarted immediately without waiting for OS timeout
+
+---
+
+## Project Structure
+
+```
+tcp-chat-server/
+├── server/
+│   └── server.c        # Multithreaded TCP server
+├── client/
+│   └── client.c        # Interactive TCP client
+├── CMakeLists.txt       # CMake build configuration
+├── .gitignore
+└── README.md
+```
+
+---
+
+## How It Works
+
+### Server
+
+```
+startup
+   │
+   ├── socket()        — create TCP socket
+   ├── setsockopt()    — SO_REUSEADDR to allow fast restart
+   ├── bind()          — attach to port 8080
+   ├── listen()        — mark socket as passive
+   │
+   └── loop: accept()
+               │
+               └── pthread_create() ──► handle_client()
+                                            │
+                                            ├── recv() message
+                                            ├── if "hello" → send "world"
+                                            ├── else       → echo back
+                                            └── loop until client disconnects
+```
+
+A `SIGINT` handler closes the server socket, causing `accept()` to unblock and the main loop to exit cleanly.
+
+### Client
+
+```
+startup
+   │
+   ├── socket()        — create TCP socket
+   ├── connect()       — connect to server on port 8080
+   │
+   └── loop:
+         ├── fgets()           — read line from stdin
+         ├── skip if empty
+         ├── if "disconnect"   → close socket, exit
+         ├── send()            — send message to server
+         └── recv() + print    — display server response
+```
+
+---
 
 ## Prerequisites
 
-- Linux or macOS environment (or Windows Subsystem for Linux)
-- GCC compiler
-- CMake (for build automation)
+- Linux, macOS, or WSL (Windows Subsystem for Linux)
+- GCC or Clang
+- CMake ≥ 3.10
+- POSIX threads (`pthread`) — available by default on Linux/macOS
 
-## Compilation
+---
 
-To compile the server and client programs, use CMake. Ensure you have CMake installed.
+## Building
 
-1. **Create a build directory and compile:**
+```bash
+git clone https://github.com/saidhann/TCP-echo.git
+cd TCP-echo
 
-    ```bash
-    mkdir build
-    cd build
-    cmake ..
-    make
-    ```
+mkdir build && cd build
+cmake ..
+make
+```
 
-   This will produce the `server` and `client` executables in the `build` directory.
+This produces two executables in `build/`:
+- `server`
+- `client`
 
-## Running the Server
+---
 
-1. **Start the server:**
+## Running
 
-    ```bash
-    ./server
-    ```
+### Start the Server
 
-   The server will start listening on port 8080.
+```bash
+./build/server
+```
 
-## Running the Client
+The server starts listening on `0.0.0.0:8080`. To stop it, press `Ctrl+C`.
 
-1. **Start the client in a separate terminal:**
+### Start a Client
 
-    ```bash
-    ./client
-    ```
+Open a separate terminal:
 
-2. **Enter messages to send to the server.**
-    - Type your message and press Enter.
-    - Type `disconnect` to close the connection and exit the client.
+```bash
+./build/client
+```
 
-## Testing Multiple Clients
+Type any message and press Enter to send it. The server's response will be printed immediately. Type `disconnect` to exit.
 
-1. **Open multiple terminals.**
-2. **In each terminal, run the client program:**
+```
+> hello
+world
+> how are you
+how are you
+> disconnect
+```
 
-    ```bash
-    ./client
-    ```
+### Testing Multiple Clients
 
-3. **Enter different messages from each client and observe the server's responses.**
+Open as many terminals as you like and run `./build/client` in each. The server handles all of them concurrently — messages from one client do not block or affect others.
 
-## Code Explanation
+```
+Terminal 1          Terminal 2          Terminal 3
+─────────────       ─────────────       ─────────────
+> hello             > test              > foo
+world               test                foo
+```
 
-### Server Code (`server.c`)
+---
 
-- **Socket Creation:** Creates a TCP socket using `socket()`.
-- **Socket Options:** Sets the `SO_REUSEADDR` option to allow reuse of the address.
-- **Binding:** Binds the socket to port 8080.
-- **Listening:** Listens for incoming connections.
-- **Accepting Connections:** Accepts client connections and handles each in a new thread.
-- **Handling Clients:** Receives messages from clients, responds with "world" for "hello", and echoes other messages.
-- **Graceful Shutdown:** Handles SIGINT to close the server socket gracefully.
+## Protocol
 
-### Client Code (`client.c`)
+The server implements a minimal text-based protocol over raw TCP:
 
-- **Socket Creation:** Creates a TCP socket using `socket()`.
-- **Connecting:** Connects to the server on port 8080.
-- **Sending Messages:** Reads user input, sends messages to the server, and handles empty messages.
-- **Receiving Responses:** Receives and displays responses from the server.
-- **Disconnection:** Closes the connection and exits when "disconnect" is typed.
+| Client sends | Server responds |
+|---|---|
+| `hello` | `world` |
+| anything else | (echoes the message back) |
+| *(empty string)* | *(ignored, not sent)* |
+| `disconnect` | *(client closes connection)* |
+
+Messages are newline-terminated UTF-8 strings. There is no framing header — each `send()`/`recv()` call carries a single message.
+
+---
 
 ## Troubleshooting
 
-- **Address Already in Use:** If you get an error about port 8080 being in use, make sure no other instance of the server is running. Use the commands provided in the troubleshooting section to find and terminate the process using port 8080.
+**`Address already in use` on startup**
 
-- **Permission Issues:** You might need elevated permissions to bind to some ports. Try using a different port if you encounter permission errors.
+Another process is already bound to port 8080. Find and stop it:
+
+```bash
+# Find the process using port 8080
+sudo ss -tulpn | grep 8080
+
+# Or with lsof
+sudo lsof -i :8080
+
+# Kill it by PID
+kill -9 <PID>
+```
+
+Alternatively, change the port number in both `server.c` and `client.c`.
+
+**Client connects but gets no response**
+
+Make sure the server is running before starting the client. Check that both were built from the same source and are targeting the same port.
+
+**Permission denied on bind**
+
+Ports below 1024 are privileged on Linux. Port 8080 should not require elevated permissions — if you changed the port to something below 1024, either revert it or run with `sudo`.
+
+---
 
 ## License
 
-No license `:)`
+This project does not currently specify a license. Please contact the author before using or distributing this work.
+
+---
+
+> Built with ❤️ using C, POSIX sockets, and pthreads.
